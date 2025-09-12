@@ -17,16 +17,17 @@ public class Dato_abstracto {
         
         Persona[] personas = new Persona[6];
        
-        personas[0] = new Persona("Ana", 20);
-        personas[1] = new Persona("Luis", 36);
-        personas[2] = new Persona("Alexa", 23);
-        personas[3] = new Persona("Pablo", 24);
-        personas[4] = new Persona("Victor", 32);
-        personas[5] = new Persona("Maria", 37);
+        personas[0] = new Persona("Analí", 20);
+        personas[1] = new Persona("Ramon", 36);
+        personas[2] = new Persona("Mike", 23);
+        personas[3] = new Persona("Yamill", 24);
+        personas[4] = new Persona("Paco", 32);
+        personas[5] = new Persona("Maria la que no quería", 37);
         
         for (Persona p: personas) {
             p.mostrar();
         }
     }
 }
+
 
