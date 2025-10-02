@@ -1,5 +1,6 @@
 import random
 
+# Definición de barcos: (nombre, tamaño, cantidad)
 barcos = [
     ("Portaviones", 5, 1),
     ("Acorazado", 4, 2),
@@ -8,8 +9,14 @@ barcos = [
     ("Destructor", 2, 2)
 ]
 
-tablero = [["~"] * 10 for _ in range(10)]
-tablero_oculto = [["~"] * 10 for _ in range(10)]
+# Símbolos para barcos y fichas
+FICHA_AGUA = "⚪"
+FICHA_TOCADO = "🔴"
+FICHA_BARCO_J1 = "🟩"  # Barco jugador 1 (verde)
+FICHA_BARCO_J2 = "🔵"  # Barco jugador 2 (azul)
+
+def crear_tablero():
+    return [[FICHA_AGUA for _ in range(10)] for _ in range(10)]
 
 def colocar_barco(tablero, tamaño, simbolo):
     colocado = False
@@ -18,153 +25,88 @@ def colocar_barco(tablero, tamaño, simbolo):
         if orientacion == "H":
             fila = random.randint(0, 9)
             col = random.randint(0, 10 - tamaño)
-            if all(tablero[fila][col + i] == "~" for i in range(tamaño)):
+            if all(tablero[fila][col + i] == FICHA_AGUA for i in range(tamaño)):
                 for i in range(tamaño):
                     tablero[fila][col + i] = simbolo
                 colocado = True
         else:
             fila = random.randint(0, 10 - tamaño)
             col = random.randint(0, 9)
-            if all(tablero[fila + i][col] == "~" for i in range(tamaño)):
+            if all(tablero[fila + i][col] == FICHA_AGUA for i in range(tamaño)):
                 for i in range(tamaño):
                     tablero[fila + i][col] = simbolo
                 colocado = True
-
-simbolos = ["P", "A", "C", "S", "D"]
-simbolo_idx = 0
-for nombre, tamaño, cantidad in barcos:
-    for _ in range(quantity := cantidad):
-        colocar_barco(tablero_oculto, tamaño, simbolos[simbolo_idx])
-    simbolo_idx += 1
 
 def imprimir_tablero(tablero):
     print("  " + " ".join(str(i) for i in range(10)))
     for idx, fila in enumerate(tablero):
         print(str(idx) + " " + " ".join(fila))
 
-intentos = 0
-max_intentos = 60
-barcos_restantes = sum(tamaño * cantidad for _, tamaño, cantidad in barcos)
+def preparar_tablero_jugador(simbolo_barco):
+    tablero = crear_tablero()
+    for nombre, tamaño, cantidad in barcos:
+        for _ in range(cantidad):
+            colocar_barco(tablero, tamaño, simbolo_barco)
+    return tablero
 
-print("¡Bienvenido a Batalla Naval!")
-print("Tienes 60 intentos para hundir todos los barcos.")
-print("Leyenda: P=Portaviones, A=Acorazado, C=Crucero, S=Submarino, D=Destructor")
+def jugar_turno(tablero_mostrar, tablero_oculto, jugador):
+    while True:
+        imprimir_tablero(tablero_mostrar)
+        print(f"Turno del Jugador {jugador}")
+        try:
+            fila = int(input("Adivina la fila (0-9): "))
+            columna = int(input("Adivina la columna (0-9): "))
+        except ValueError:
+            print("Por favor ingresa números válidos.")
+            continue
 
-while intentos < max_intentos and barcos_restantes > 0:
-    imprimir_tablero(tablero)
-    try:
-        fila = int(input("Adivina la fila (0-9): "))
-        columna = int(input("Adivina la columna (0-9): "))
-    except ValueError:
-        print("Por favor ingresa números válidos.")
-        continue
+        if fila < 0 or fila > 9 or columna < 0 or columna > 9:
+            print("¡Fuera del tablero!")
+            continue
 
-    if fila < 0 or fila > 9 or columna < 0 or columna > 9:
-        print("¡Fuera del tablero!")
-        continue
+        if tablero_mostrar[fila][columna] != FICHA_AGUA:
+            print("Ya intentaste esa posición.")
+            continue
 
-    intentos += 1
-
-    if tablero[fila][columna] != "~":
-        print("Ya intentaste esa posición.")
-        continue
-
-    if tablero_oculto[fila][columna] != "~":
-        print(f"¡Tocado! ({tablero_oculto[fila][columna]})")
-        tablero[fila][columna] = tablero_oculto[fila][columna]
-        barcos_restantes -= 1
-    else:
-        print("¡Agua!")
-        tablero[fila][columna] = "X"
-
-if barcos_restantes == 0:
-    print("¡Felicidades! Hundiste todos los barcos.")
-else:
-    print("¡Se acabaron los intentos!")
-    print("Así estaba el tablero oculto:")
-    imprimir_tablero(tablero_oculto)
-    import random
-
-barcos = [
-    ("Portaviones", 5, 1),
-    ("Acorazado", 4, 2),
-    ("Crucero", 3, 1),
-    ("Submarino", 3, 2),
-    ("Destructor", 2, 2)
-]
-
-tablero = [["~"] * 10 for _ in range(10)]
-tablero_oculto = [["~"] * 10 for _ in range(10)]
-
-def colocar_barco(tablero, tamaño, simbolo):
-    colocado = False
-    while not colocado:
-        orientacion = random.choice(["H", "V"])
-        if orientacion == "H":
-            fila = random.randint(0, 9)
-            col = random.randint(0, 10 - tamaño)
-            if all(tablero[fila][col + i] == "~" for i in range(tamaño)):
-                for i in range(tamaño):
-                    tablero[fila][col + i] = simbolo
-                colocado = True
+        if tablero_oculto[fila][columna] in [FICHA_BARCO_J1, FICHA_BARCO_J2]:
+            print("¡Tocado!")
+            tablero_mostrar[fila][columna] = FICHA_TOCADO
+            tablero_oculto[fila][columna] = FICHA_TOCADO
+            return True
         else:
-            fila = random.randint(0, 10 - tamaño)
-            col = random.randint(0, 9)
-            if all(tablero[fila + i][col] == "~" for i in range(tamaño)):
-                for i in range(tamaño):
-                    tablero[fila + i][col] = simbolo
-                colocado = True
+            print("¡Agua!")
+            tablero_mostrar[fila][columna] = FICHA_AGUA
+            return False
 
-simbolos = ["P", "A", "C", "S", "D"]
-simbolo_idx = 0
-for nombre, tamaño, cantidad in barcos:
-    for _ in range(quantity := cantidad):
-        colocar_barco(tablero_oculto, tamaño, simbolos[simbolo_idx])
-    simbolo_idx += 1
+def contar_barcos(tablero, simbolo_barco):
+    return sum(fila.count(simbolo_barco) for fila in tablero)
 
-def imprimir_tablero(tablero):
-    print("  " + " ".join(str(i) for i in range(10)))
-    for idx, fila in enumerate(tablero):
-        print(str(idx) + " " + " ".join(fila))
-
-intentos = 0
-max_intentos = 60
-barcos_restantes = sum(tamaño * cantidad for _, tamaño, cantidad in barcos)
+# Preparar tableros para ambos jugadores
+tablero_j1 = preparar_tablero_jugador(FICHA_BARCO_J1)
+tablero_j2 = preparar_tablero_jugador(FICHA_BARCO_J2)
+tablero_mostrar_j1 = crear_tablero()
+tablero_mostrar_j2 = crear_tablero()
 
 print("¡Bienvenido a Batalla Naval!")
-print("Tienes 60 intentos para hundir todos los barcos.")
-print("Leyenda: P=Portaviones, A=Acorazado, C=Crucero, S=Submarino, D=Destructor")
+print("Barcos del Jugador 1: 🟩 (verde)")
+print("Barcos del Jugador 2: 🔵 (azul)")
+print("Aciertos: 🔴  Agua: ⚪")
 
-while intentos < max_intentos and barcos_restantes > 0:
-    imprimir_tablero(tablero)
-    try:
-        fila = int(input("Adivina la fila (0-9): "))
-        columna = int(input("Adivina la columna (0-9): "))
-    except ValueError:
-        print("Por favor ingresa números válidos.")
-        continue
-
-    if fila < 0 or fila > 9 or columna < 0 or columna > 9:
-        print("¡Fuera del tablero!")
-        continue
-
-    intentos += 1
-
-    if tablero[fila][columna] != "~":
-        print("Ya intentaste esa posición.")
-        continue
-
-    if tablero_oculto[fila][columna] != "~":
-        print(f"¡Tocado! ({tablero_oculto[fila][columna]})")
-        tablero[fila][columna] = tablero_oculto[fila][columna]
-        barcos_restantes -= 1
+turno = 1
+while True:
+    if turno == 1:
+        barcos_restantes = contar_barcos(tablero_j2, FICHA_BARCO_J2)
+        if barcos_restantes == 0:
+            print("¡Felicidades Jugador 1! Hundiste todos los barcos azules.")
+            break
+        print("\n--- Jugador 1 ataca ---")
+        jugar_turno(tablero_mostrar_j1, tablero_j2, 1)
+        turno = 2
     else:
-        print("¡Agua!")
-        tablero[fila][columna] = "X"
-
-if barcos_restantes == 0:
-    print("¡Felicidades! Hundiste todos los barcos.")
-else:
-    print("¡Se acabaron los intentos!")
-    print("Así estaba el tablero oculto:")
-    imprimir_tablero(tablero_oculto)
+        barcos_restantes = contar_barcos(tablero_j1, FICHA_BARCO_J1)
+        if barcos_restantes == 0:
+            print("¡Felicidades Jugador 2! Hundiste todos los barcos verdes.")
+            break
+        print("\n--- Jugador 2 ataca ---")
+        jugar_turno(tablero_mostrar_j2, tablero_j1, 2)
+        turno = 1
