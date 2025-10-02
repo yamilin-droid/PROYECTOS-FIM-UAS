@@ -1,92 +1,125 @@
-const board = [
-  [' ', ' ', ' ', ' '],
-  [' ', ' ', ' ', ' '],
-  [' ', ' ', ' ', ' '],
-  [' ', ' ', ' ', ' ']
-];
+// Juego de 4 en raya (Conecta 4) en consola JavaScript
 
-let currentPlayer = 'X';
-let moves = 0;
+const ROWS = 6;
+const COLS = 7;
+const EMPTY = ".";
 
-function printBoard() {
-  console.log('  0 1 2 3');
-  for (let i = 0; i < 4; i++) {
-    let row = `${i} `;
-    for (let j = 0; j < 4; j++) {
-      row += board[i][j] + ' ';
+// Crear tablero vacío
+function crearTablero() {
+    return Array.from({ length: ROWS }, () => Array(COLS).fill(EMPTY));
+}
+
+// Imprimir tablero en consola
+function imprimirTablero(tablero) {
+    console.clear();
+    for (let fila of tablero) {
+        console.log(fila.join(" "));
     }
-    console.log(row);
-  }
+    console.log("0 1 2 3 4 5 6");
 }
 
-function isValidMove(row, col) {
-  return row >= 0 && row < 4 && col >= 0 && col < 4 && board[row][col] === ' ';
+// Colocar ficha en la columna elegida
+function colocarFicha(tablero, col, ficha) {
+    for (let row = ROWS - 1; row >= 0; row--) {
+        if (tablero[row][col] === EMPTY) {
+            tablero[row][col] = ficha;
+            return row;
+        }
+    }
+    return -1; // Columna llena
 }
 
-function checkWin() {
-  
-  for (let i = 0; i < 4; i++) {
-    if (
-      board[i][0] === currentPlayer &&
-      board[i][1] === currentPlayer &&
-      board[i][2] === currentPlayer &&
-      board[i][3] === currentPlayer
-    ) return true;
-    if (
-      board[0][i] === currentPlayer &&
-      board[1][i] === currentPlayer &&
-      board[2][i] === currentPlayer &&
-      board[3][i] === currentPlayer
-    ) return true;
-  }
-  
-  if (
-    board[0][0] === currentPlayer &&
-    board[1][1] === currentPlayer &&
-    board[2][2] === currentPlayer &&
-    board[3][3] === currentPlayer
-  ) return true;
-  if (
-    board[0][3] === currentPlayer &&
-    board[1][2] === currentPlayer &&
-    board[2][1] === currentPlayer &&
-    board[3][0] === currentPlayer
-  ) return true;
-  return false;
+// Verificar si hay 4 en línea
+function hayGanador(tablero, ficha) {
+    // Horizontal, vertical y diagonales
+    for (let row = 0; row < ROWS; row++) {
+        for (let col = 0; col < COLS; col++) {
+            if (
+                col + 3 < COLS &&
+                tablero[row][col] === ficha &&
+                tablero[row][col + 1] === ficha &&
+                tablero[row][col + 2] === ficha &&
+                tablero[row][col + 3] === ficha
+            ) return true;
+            if (
+                row + 3 < ROWS &&
+                tablero[row][col] === ficha &&
+                tablero[row + 1][col] === ficha &&
+                tablero[row + 2][col] === ficha &&
+                tablero[row + 3][col] === ficha
+            ) return true;
+            if (
+                row + 3 < ROWS && col + 3 < COLS &&
+                tablero[row][col] === ficha &&
+                tablero[row + 1][col + 1] === ficha &&
+                tablero[row + 2][col + 2] === ficha &&
+                tablero[row + 3][col + 3] === ficha
+            ) return true;
+            if (
+                row - 3 >= 0 && col + 3 < COLS &&
+                tablero[row][col] === ficha &&
+                tablero[row - 1][col + 1] === ficha &&
+                tablero[row - 2][col + 2] === ficha &&
+                tablero[row - 3][col + 3] === ficha
+            ) return true;
+        }
+    }
+    return false;
 }
 
-
+// Juego principal (requiere Node.js para entrada por teclado)
 const readline = require('readline').createInterface({
-  input: process.stdin,
-  output: process.stdout
+    input: process.stdin,
+    output: process.stdout
 });
 
-function askMove() {
-  printBoard();
-  readline.question(`Turno de ${currentPlayer}. Ingresa fila y columna (ejemplo: 1 2): `, input => {
-    const [row, col] = input.split(' ').map(Number);
-    if (!isValidMove(row, col)) {
-      console.log('¡Jugada inválida! Intenta de nuevo.');
-      askMove();
-      return;
-    }
-    board[row][col] = currentPlayer;
-    moves++;
-    if (checkWin()) {
-      printBoard();
-      console.log(¡El jugador ${currentPlayer} ha ganado!);
-      readline.close();
-      return;
-    }
-    if (moves === 16) {
-      printBoard();
-      console.log('¡Empate!');
-      readline.close();
-      return;
-    }
-    currentPlayer = currentPlayer === 'X' ? 'O' : 'X';
-    askMove();
-  });
+function preguntarColumna(jugador, callback) {
+    readline.question(`Jugador ${jugador} (X/O), elige columna (0-6): `, input => {
+        const col = parseInt(input);
+        if (isNaN(col) || col < 0 || col > 6) {
+            console.log("Columna inválida. Intenta de nuevo.");
+            preguntarColumna(jugador, callback);
+        } else {
+            callback(col);
+        }
+    });
 }
 
-askMove();
+function juego() {
+    const tablero = crearTablero();
+    let turno = 0;
+    let movimientos = 0;
+    const fichas = ["X", "O"];
+
+    function siguienteTurno() {
+        imprimirTablero(tablero);
+        const jugador = turno % 2;
+        preguntarColumna(fichas[jugador], col => {
+            const fila = colocarFicha(tablero, col, fichas[jugador]);
+            if (fila === -1) {
+                console.log("Columna llena. Elige otra.");
+                siguienteTurno();
+                return;
+            }
+            movimientos++;
+            if (hayGanador(tablero, fichas[jugador])) {
+                imprimirTablero(tablero);
+                console.log(`¡Jugador ${fichas[jugador]} gana!`);
+                readline.close();
+                return;
+            }
+            if (movimientos === ROWS * COLS) {
+                imprimirTablero(tablero);
+                console.log("¡Empate!");
+                readline.close();
+                return;
+            }
+            turno++;
+            siguienteTurno();
+        });
+    }
+
+    siguienteTurno();
+}
+
+juego();
