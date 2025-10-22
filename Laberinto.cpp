@@ -8,19 +8,22 @@
 #include <string>
 #include <algorithm>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 using namespace std;
 
 const int MAZE_ROWS = 15;
 const int MAZE_COLS = 15;
 
 const char PATH_CHAR = ' ';
-const char WALL_CHAR = '|';   // paredes ahora son '|'
+const char WALL_CHAR = '|';
 const char KEY_CHAR = 'L';
 const char TRAP_CHAR = 'T';
 const char DOOR_CHAR = 'C';
 const char EXIT_CHAR = 'S';
 const char PORTAL_CHAR = 'O';
-// PLAYER se muestra como "3>" en la impresión (string), no como char
 
 const string SAVE_FILE  = "savegame.txt";
 const string SCORE_FILE = "scores.txt";
@@ -30,6 +33,7 @@ struct Player {
     int lives;
     int keys;
     int score;
+    int energy;    // 0..4
     string name;
 };
 
@@ -41,6 +45,31 @@ struct Maze {
     }
 };
 
+static bool g_ansi_enabled = false;
+
+void enableAnsiIfWindows() {
+#ifdef _WIN32
+    if (g_ansi_enabled) return;
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (hOut == INVALID_HANDLE_VALUE) return;
+    DWORD dwMode = 0;
+    if (!GetConsoleMode(hOut, &dwMode)) return;
+    dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+    if (!SetConsoleMode(hOut, dwMode)) return;
+    g_ansi_enabled = true;
+#endif
+}
+
+// mueve cursor (1-based)
+void moveCursor(int row, int col) {
+    cout << "\x1b[" << row << ";" << col << "H";
+}
+
+// borra hasta el final de la línea actual
+void clearLine() {
+    cout << "\x1b[0K";
+}
+
 Maze generateMaze(int rows = MAZE_ROWS, int cols = MAZE_COLS) {
     Maze m(rows, cols);
     if (rows % 2 == 0) rows--;
@@ -48,7 +77,7 @@ Maze generateMaze(int rows = MAZE_ROWS, int cols = MAZE_COLS) {
     m.rows = rows; m.cols = cols;
     m.grid.assign(rows, string(cols, WALL_CHAR));
 
-    mt19937 rng((unsigned)time(nullptr));
+    mt19937 rng((unsigned)time(nullptr) + rows*31 + cols*17);
     auto randInt = [&](int a, int b){ return uniform_int_distribution<int>(a,b)(rng); };
 
     int sr = 1, sc = 1;
@@ -111,27 +140,77 @@ vector<pair<int,int>> findPositions(const Maze &m, char sym) {
     return res;
 }
 
-// imprimir: jugador se muestra como "3>" y cada celda normal se imprime con un espacio para alineación
-void printMazeWithPlayer(const Maze &m, const Player &p) {
-    cout << "\n";
+// coordenadas fijas para el layout en consola
+int gridTopRow() { return 1; }               // fila donde inicia la grilla
+int colIndexRow(const Maze &m) { return gridTopRow() + m.rows; }
+int statusRow(const Maze &m)   { return colIndexRow(m) + 1; }
+int messageRow(const Maze &m)  { return statusRow(m) + 1; }
+
+// calcula columna (1-based) para la celda j (cada celda ocupa 2 columnas en la salida)
+int cellCol(int j) { return 1 + j*2; }
+
+// dibuja todo el laberinto (una sola vez al inicio del nivel)
+void drawFullMazeStatic(const Maze &m, const Player &p) {
+    enableAnsiIfWindows();
+    // limpiar pantalla
+    cout << "\x1b[2J";
+    // dibujar grid
     for (int i=0;i<m.rows;i++) {
+        moveCursor(gridTopRow() + i, 1);
         for (int j=0;j<m.cols;j++) {
             if (i==p.r && j==p.c) {
-                cout << "3>";                 // representación del jugador
+                cout << "3>";
             } else {
-                char ch = m.grid[i][j];
-                cout << ch << ' ';           // celda + espacio para alinear con "3>"
+                cout << m.grid[i][j] << ' ';
             }
         }
-        cout << "\n";
     }
-    // imprimir índices de columna ajustados (cada celda ocupa 2 caracteres)
+    // índices de columna
+    moveCursor(colIndexRow(m), 1);
     for (int c=0;c<m.cols;c++) {
         if (c < 10) cout << c << ' ';
-        else cout << c; // no ocurre en nuestro tamaño actual
+        else cout << c;
     }
-    cout << "\nVidas: " << p.lives << "  Llaves: " << p.keys << "  Puntos: " << p.score << "\n";
-    cout << "Movimientos: WASD o up/down/left/right. save/load/quit.\n";
+    // estado inicial
+    moveCursor(statusRow(m), 1);
+    cout << "Vidas: " << p.lives << "  Energia: [";
+    for (int i=0;i<4;i++) cout << (i < p.energy ? '*' : '-');
+    cout << "]  Llaves: " << p.keys << "  Puntos: " << p.score;
+    // limpiar mensaje línea
+    moveCursor(messageRow(m), 1);
+    clearLine();
+    cout.flush();
+}
+
+// actualiza una celda del laberinto (caracter + espacio)
+void drawCellAt(const Maze &m, int r, int c) {
+    moveCursor(gridTopRow() + r, cellCol(c));
+    char ch = m.grid[r][c];
+    cout << ch << ' ';
+}
+
+// dibuja jugador en la celda (usa "3>" que ocupa 2 columnas)
+void drawPlayerAt(int r, int c) {
+    moveCursor(gridTopRow() + r, cellCol(c));
+    cout << "3>";
+}
+
+// actualiza estado (vidas, energia, llaves, puntos)
+void updateStatus(const Maze &m, const Player &p) {
+    moveCursor(statusRow(m), 1);
+    clearLine();
+    cout << "Vidas: " << p.lives << "  Energia: [";
+    for (int i=0;i<4;i++) cout << (i < p.energy ? '*' : '-');
+    cout << "]  Llaves: " << p.keys << "  Puntos: " << p.score;
+    cout.flush();
+}
+
+// muestra mensaje en la línea de mensaje (debajo del estado)
+void showMessage(const Maze &m, const string &msg) {
+    moveCursor(messageRow(m), 1);
+    clearLine();
+    cout << msg;
+    cout.flush();
 }
 
 bool tryMove(Player &player, Maze &m, const string &dir) {
@@ -145,43 +224,71 @@ bool tryMove(Player &player, Maze &m, const string &dir) {
     int nr = player.r + dr;
     int nc = player.c + dc;
     if (nr < 0 || nr >= m.rows || nc < 0 || nc >= m.cols) {
-        cout << "No puedes salir del laberinto.\n";
+        showMessage(m, "No puedes salir del laberinto.");
         return false;
     }
     char cell = m.grid[nr][nc];
     if (cell == WALL_CHAR) {
-        cout << "Hay una pared. Movimiento no válido.\n";
+        // golpear pared consume energía
+        player.energy--;
+        if (player.energy <= 0) {
+            player.lives--;
+            player.energy = 4; // reset energía al perder vida
+            updateStatus(m, player);
+            if (player.lives <= 0) {
+                showMessage(m, "Has perdido todas tus vidas. Reiniciando nivel...");
+                return false;
+            } else {
+                showMessage(m, "Se agotó la energia. Perdiste una vida.");
+            }
+        } else {
+            updateStatus(m, player);
+            showMessage(m, "Golpeaste una pared. Energia restante: " + to_string(player.energy) + "/4");
+        }
         return false;
     }
+
+    // movimiento válido: actualizar render sin redibujar todo
+    // 1) dibujar celda antigua con su contenido original
+    drawCellAt(m, player.r, player.c);
+
+    // 2) resolver efectos de la celda destino antes de poner jugador
     if (cell == DOOR_CHAR) {
         if (player.keys > 0) {
             player.keys--;
             player.score += 5;
             m.grid[nr][nc] = PATH_CHAR;
-            cout << "Usaste una llave para abrir la puerta.\n";
+            showMessage(m, "Usaste una llave para abrir la puerta.");
         } else {
-            cout << "Necesitas una llave para abrir la puerta.\n";
+            // no se puede pasar, reimprimir player en su lugar (porque ya hemos pintado la celda antigua)
+            drawPlayerAt(player.r, player.c);
+            showMessage(m, "Necesitas una llave para abrir la puerta.");
             return false;
         }
     }
+
     player.r = nr; player.c = nc;
+    drawPlayerAt(player.r, player.c);
 
     if (cell == KEY_CHAR) {
         player.keys++;
         player.score += 10;
-        cout << "Recogiste una llave!\n";
         m.grid[nr][nc] = PATH_CHAR;
+        updateStatus(m, player);
+        showMessage(m, "Recogiste una llave!");
     } else if (cell == TRAP_CHAR) {
         player.lives--;
-        cout << "Caiste en una trampa! Perdiste una vida.\n";
         m.grid[nr][nc] = PATH_CHAR;
+        updateStatus(m, player);
+        showMessage(m, "Caiste en una trampa! Perdiste una vida.");
         if (player.lives <= 0) {
-            cout << "Has perdido todas tus vidas. Reiniciando nivel...\n";
+            showMessage(m, "Has perdido todas tus vidas. Reiniciando nivel...");
             return false;
         }
     } else if (cell == EXIT_CHAR) {
         player.score += 50;
-        cout << "¡Salida encontrada!\n";
+        updateStatus(m, player);
+        showMessage(m, "¡Salida encontrada!");
         return true;
     } else if (cell == PORTAL_CHAR) {
         vector<pair<int,int>> portals = findPositions(m, PORTAL_CHAR);
@@ -192,12 +299,18 @@ bool tryMove(Player &player, Maze &m, const string &dir) {
             if (!others.empty()) {
                 mt19937 rng((unsigned)time(nullptr));
                 int idx = uniform_int_distribution<int>(0, (int)others.size()-1)(rng);
+                // mover jugador: borrar posición actual (ya representada por player), dibujar cell original
+                // primero dibujar la celda actual (porque portal teletransporta)
+                drawCellAt(m, player.r, player.c); // reemplaza 3> por celda (portal estaba ahí)
                 player.r = others[idx].first;
                 player.c = others[idx].second;
-                cout << "¡Portal! Teletransportado a otra ubicación.\n";
+                drawPlayerAt(player.r, player.c);
+                showMessage(m, "¡Portal! Teletransportado a otra ubicación.");
             }
         }
     }
+
+    updateStatus(m, player);
     return false;
 }
 
@@ -205,7 +318,7 @@ void saveGame(int levelIndex, const Maze &m, const Player &p) {
     ofstream ofs(SAVE_FILE);
     if (!ofs) { cout << "Error al abrir archivo de guardado.\n"; return; }
     ofs << levelIndex << " " << m.rows << " " << m.cols << "\n";
-    ofs << p.r << " " << p.c << " " << p.lives << " " << p.keys << " " << p.score << " " << p.name << "\n";
+    ofs << p.r << " " << p.c << " " << p.lives << " " << p.keys << " " << p.score << " " << p.energy << " " << p.name << "\n";
     for (int i=0;i<m.rows;i++) ofs << m.grid[i] << "\n";
     ofs.close();
     cout << "Partida guardada en " << SAVE_FILE << "\n";
@@ -216,17 +329,16 @@ int loadGame(Maze &m, Player &p) {
     if (!ifs) { cout << "No existe archivo de guardado.\n"; return -1; }
     int levelIndex, rows, cols;
     ifs >> levelIndex >> rows >> cols;
-    ifs >> p.r >> p.c >> p.lives >> p.keys >> p.score;
+    ifs >> p.r >> p.c >> p.lives >> p.keys >> p.score >> p.energy;
     string restOfLine;
     getline(ifs, restOfLine);
     getline(ifs, p.name);
     m.rows = rows; m.cols = cols;
     m.grid.assign(rows, string());
-    // reposition file to read grid lines properly
     ifs.close();
     ifstream ifs2(SAVE_FILE);
     ifs2 >> levelIndex >> rows >> cols;
-    ifs2 >> p.r >> p.c >> p.lives >> p.keys >> p.score;
+    ifs2 >> p.r >> p.c >> p.lives >> p.keys >> p.score >> p.energy;
     getline(ifs2, restOfLine);
     getline(ifs2, p.name);
     for (int i=0;i<rows;i++) {
@@ -296,6 +408,7 @@ void showLeaderboard() {
 }
 
 int main() {
+    enableAnsiIfWindows();
     cout << "==== Laberinto de Escape (Consola C++) ====\n";
     cout << "Ingresa tu nombre: ";
     Player player;
@@ -316,6 +429,8 @@ int main() {
     player.lives = 3;
     player.keys = 0;
     player.score = 0;
+    player.energy = 4;
+
     bool foundStart = false;
     for (int r=0; r<levels[0].rows && !foundStart; ++r)
         for (int c=0; c<levels[0].cols; ++c)
@@ -323,12 +438,17 @@ int main() {
 
     while (!exitGame && currentLevel < (int)levels.size()) {
         Maze &maze = levels[currentLevel];
-        cout << "\n--- Nivel " << (currentLevel+1) << " ---\n";
-        bool levelComplete = false;
+        // dibujar laberinto estático al inicio del nivel
+        drawFullMazeStatic(maze, player);
+        showMessage(maze, "Nivel " + to_string(currentLevel+1) + " - usa WASD o up/down/left/right. save/load/quit.");
 
+        bool levelComplete = false;
         while (!levelComplete) {
-            printMazeWithPlayer(maze, player);
+            // leer comando
+            moveCursor(messageRow(maze)+1,1); // posicionar el cursor debajo del mensaje para entrada
+            clearLine();
             cout << "> ";
+            cout.flush();
             string cmd;
             getline(cin, cmd);
             if (cmd.empty()) continue;
@@ -346,34 +466,40 @@ int main() {
             } else if (cmd == "load") {
                 int lvl = loadGame(maze, player);
                 if (lvl >= 0) currentLevel = lvl;
+                // redraw loaded level
+                drawFullMazeStatic(maze, player);
                 continue;
             } else if (cmd == "scores") {
                 showLeaderboard();
+                drawFullMazeStatic(maze, player);
                 continue;
             } else if (cmd == "up" || cmd == "down" || cmd == "left" || cmd == "right" ||
                        cmd == "w" || cmd == "a" || cmd == "s" || cmd == "d") {
                 bool finished = tryMove(player, maze, cmd);
                 if (finished) {
-                    cout << "¡Completaste el nivel " << (currentLevel+1) << "!\n";
+                    showMessage(maze, "¡Completaste el nivel " + to_string(currentLevel+1) + "!");
                     currentLevel++;
                     levelComplete = true;
                     if (currentLevel < (int)levels.size()) {
+                        // generar nuevo laberinto distinto para siguiente nivel
+                        levels[currentLevel] = generateMaze(MAZE_ROWS, MAZE_COLS);
+                        placeElements(levels[currentLevel], 3 + currentLevel, 6 + currentLevel*2, 3 + currentLevel, 2 + currentLevel);
                         Maze &next = levels[currentLevel];
                         bool setPos = false;
                         for (int r=0;r<next.rows && !setPos;r++) for (int c=0;c<next.cols;c++)
                             if (next.grid[r][c] == PATH_CHAR) { player.r = r; player.c = c; setPos = true; break; }
                         player.lives = min(player.lives + 1, 5);
+                        player.energy = 4;
                         player.score += 20;
                     } else {
-                        cout << "¡Has escapado de todos los niveles!\n";
-                        cout << "Ya gano profe pongame 10\n";
+                        showMessage(maze, "¡Has escapado de todos los niveles!");
                         saveScore(player.name, player.score);
                         exitGame = true;
                         break;
                     }
                 }
                 if (player.lives <= 0) {
-                    cout << "Reiniciando nivel por perder vidas...\n";
+                    showMessage(maze, "Reiniciando nivel por perder vidas...");
                     levels[currentLevel] = generateMaze(MAZE_ROWS, MAZE_COLS);
                     placeElements(levels[currentLevel], 3+currentLevel, 6+currentLevel*2, 3+currentLevel, 2+currentLevel);
                     Maze &cur = levels[currentLevel];
@@ -381,15 +507,18 @@ int main() {
                         if (cur.grid[r][c] == PATH_CHAR) { player.r=r; player.c=c; r=cur.rows; break; }
                     player.lives = 3;
                     player.keys = 0;
+                    player.energy = 4;
                     player.score = max(0, player.score-10);
                     break;
                 }
             } else {
-                cout << "Comando no reconocido. Usa WASD o up/down/left/right, save, load, scores, quit.\n";
+                showMessage(maze, "Comando no reconocido. Usa WASD o up/down/left/right, save, load, scores, quit.");
             }
         }
     }
 
+    // mover cursor al final para mostrar resumen
+    moveCursor(statusRow(levels.back())+3, 1);
     cout << "\nJuego finalizado. Puntos totales: " << player.score << "\n";
     saveScore(player.name, player.score);
     cout << "Tu rango: " << rankFromScore(player.score) << "\n";
